@@ -15,12 +15,11 @@ type Config struct {
 		UserName string
 		Password string
 		Database string
-		CheckSlaveStatus bool
 		Port string
 	}
 	HealthCheck struct {
+		CheckSlaveStatus bool
 		MaxQueries	int
-		MaxDelay	int
 		Port string
 	}
 }
@@ -29,7 +28,6 @@ var cnf Config
 
 func main() {
 
-	//var cnf Config
 	err := gcfg.ReadFileInto(&cnf, "/etc/mysql/mysql-healthcheck.cnf")
 	if err != nil {
 		log.Printf("%v", err)
@@ -55,14 +53,26 @@ func healthcheck(w http.ResponseWriter, r *http.Request) {
 	// Open doesn't open a connection. Validate DSN data:
 	err = db.Ping()
 	if err != nil {
-		log.Printf("%v", err)
+		//log.Printf("%v", err)
+		log.Print("MySQL Running: [false], Query Count: [0],  Slave Running: [0]")
+		w.Header().Set("Error", "Unable to connect to mysql")
+		w.WriteHeader(500)
+		return
 	}
 
-	slaveCheck(db)
 	openQueries, slaveRunning := queryCheck(db)
 
-	log.Printf("Query Count: [%v],  Slave Running: [%v]", openQueries, slaveRunning)
+	log.Printf("MySQL Running: [true], Query Count: [%v],  Slave Running: [%v]", openQueries, slaveRunning)
 
+	w.Header().Set("Server", "Mysql-Health-Check")
+	w.Header().Set("Queries", strconv.Itoa(openQueries))
+	w.Header().Set("Slave-Running", strconv.FormatBool(slaveRunning))
+
+	if openQueries >= cnf.HealthCheck.MaxQueries || ( cnf.HealthCheck.CheckSlaveStatus && slaveRunning == false ) {
+		w.WriteHeader(500)
+	} else {
+		w.WriteHeader(200)
+	}
 
 }
 
@@ -70,6 +80,7 @@ func queryCheck(db *sql.DB) (int, bool) {
 
 	var queryCount int
 	var slaveRunning bool
+	slaveRunning = false
 
 	globalStats, err := db.Query("SHOW GLOBAL STATUS")
 	if err != nil {
@@ -81,7 +92,6 @@ func queryCheck(db *sql.DB) (int, bool) {
 		var name string
 		var value string
 		err = globalStats.Scan(&name, &value )
-		//log.Printf("Name: %v, Value: %v", name, value)
 
 		// Check current queries
 		if name == "Threads_connected" {
@@ -89,31 +99,11 @@ func queryCheck(db *sql.DB) (int, bool) {
 
 		}
 		// Check if slave running
-		if name == "Slave_running" && value == "OFF" {
-			slaveRunning = false
-
+		if name == "Slave_running" && value == "ON" {
+			slaveRunning = true
 		}
 	}
 
 	return queryCount, slaveRunning
-}
-
-func slaveCheck(db *sql.DB) {
-
-	slaveStats, err := db.Query("SHOW SLAVE STATUS")
-	if err != nil {
-		log.Printf("%v", err)
-	}
-	defer slaveStats.Close()
-
-	log.Printf("%+v", slaveStats)
-
-	for slaveStats.Next() {
-		var name string
-		var value string
-		err = slaveStats.Scan(&name, &value )
-		log.Printf("Name: %v, Value: %v", name, value)
-	}
-
 }
 
