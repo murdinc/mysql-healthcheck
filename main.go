@@ -1,26 +1,26 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"strconv"
-	"code.google.com/p/gcfg"
-	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-)
 
+	_ "github.com/go-sql-driver/mysql"
+	"gopkg.in/gcfg.v1"
+)
 
 type Config struct {
 	Mysql struct {
 		UserName string
 		Password string
 		Database string
-		Port string
+		Port     string
 	}
 	HealthCheck struct {
 		CheckSlaveStatus bool
-		MaxQueries	int
-		Port string
+		MaxQueries       int
+		Port             string
 	}
 }
 
@@ -34,16 +34,15 @@ func main() {
 		return
 	}
 
-	http.HandleFunc("/", healthcheck) // redirect all urls to the handler function
-	http.ListenAndServe(":" + cnf.HealthCheck.Port, nil) // listen for connections at port 9999 on the local machine
+	http.HandleFunc("/", healthcheck)                  // redirect all urls to the handler function
+	http.ListenAndServe(":"+cnf.HealthCheck.Port, nil) // listen for connections at port 9999 on the local machine
 
 	//log.Printf("%v", cnf.Mysql.UserName)
 }
 
+func healthcheck(w http.ResponseWriter, r *http.Request) {
 
-func healthcheck(w http.ResponseWriter, r *http.Request) { 
-
-	db, err := sql.Open("mysql", cnf.Mysql.UserName + ":" + cnf.Mysql.Password + "@/" + cnf.Mysql.Database)
+	db, err := sql.Open("mysql", cnf.Mysql.UserName+":"+cnf.Mysql.Password+"@/"+cnf.Mysql.Database)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -68,7 +67,7 @@ func healthcheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Queries", strconv.Itoa(openQueries))
 	w.Header().Set("Slave-Running", strconv.FormatBool(slaveRunning))
 
-	if openQueries >= cnf.HealthCheck.MaxQueries || ( cnf.HealthCheck.CheckSlaveStatus && slaveRunning == false ) {
+	if openQueries >= cnf.HealthCheck.MaxQueries || (cnf.HealthCheck.CheckSlaveStatus && slaveRunning == false) {
 		w.WriteHeader(500)
 	} else {
 		w.WriteHeader(200)
@@ -91,7 +90,7 @@ func queryCheck(db *sql.DB) (int, bool) {
 	for globalStats.Next() {
 		var name string
 		var value string
-		err = globalStats.Scan(&name, &value )
+		err = globalStats.Scan(&name, &value)
 
 		// Check current queries
 		if name == "Threads_connected" {
@@ -106,4 +105,3 @@ func queryCheck(db *sql.DB) (int, bool) {
 
 	return queryCount, slaveRunning
 }
-
